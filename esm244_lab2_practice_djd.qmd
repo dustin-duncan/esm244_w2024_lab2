@@ -1,0 +1,164 @@
+---
+title: "esm244_lab2_practice"
+author: "Dustin Duncan"
+format: 
+  html:
+  code-fold: show
+  toc: true
+  number-sections: true
+editor: visual
+execute: 
+  echo: true
+  message: false
+  warning: false
+---
+
+```{r}
+library(tidyverse)
+library(here)
+library(tsibble)
+library(feasts)
+library(fable)
+rm(list = ls())
+```
+
+#### Loading data
+
+
+```{r}
+mauna_loa_df <- read_csv(here("data", "co2_mauna_loa.csv"))
+```
+
+## Analysis Part 1
+
+Converting date column to proper date format, then turning dataframe into time-series dataframe 
+
+```{r}
+mauna_loa_ts <- mauna_loa_df %>% 
+  mutate(date = tsibble::yearmonth(date)) %>% 
+  as_tsibble(key = NULL, 
+             index = date)
+```
+
+Create an exploratory season plot and exploratory subseries plot. 
+
+```{r}
+# Overall plot
+ggplot(mauna_loa_ts, aes(x = date, y = co2_mean)) + 
+  geom_line() + 
+  labs(x = "Date", y = "Mean CO2 concentration")
+
+# Season plot 
+mauna_loa_ts %>% 
+  gg_season(y = co2_mean)
+
+# Subseries plot 
+mauna_loa_ts %>% 
+  gg_subseries(y = co2_mean)
+```
+
+It looks like there is potentially some seasonality to co2 concentrations with a very slight increase in spring months and dip in fall months, but overall the trend states that its just been increasing over time. 
+
+## Analysis Part 2:
+
+Create an ETS expoential smoothing model, including (if appropriate) seasonality and trend. Consider whether the trend and seasonality should be considered as additive or multiplicative (try different combinations to see how it changes your forecast)
+
+Use the ETS model to forecast CO2 levels for the next 20 years, then plot that forecast on the original data using autoplot()
+
+use the ETS model and broom::augment to fit modeled values against the actual observed values. Plot the two together, and plot a histogram of the residuals. How well does our model fit our historic observed values? 
+
+Optional: create an ETS model just trained on data through 2003, and then create a 20 year forecast and then compare those forecasted values against the observed values from 2004-2023
+
+```{r}
+# creating an exponential smoothing model 
+
+mauna_loa_fit <- mauna_loa_ts %>% 
+  model(ets = ETS(co2_mean ~ season(method = "M") + trend(method = "M")))
+
+# Forecasting our model out 20 years
+mauna_loa_forecast <- mauna_loa_fit %>% 
+  forecast(h = '20 years')
+
+# Plotting our projection for the next 20 years
+mauna_loa_forecast %>% 
+  autoplot()
+
+# Plotting our projection with our actual data
+mauna_loa_forecast %>% 
+  autoplot(mauna_loa_ts)
+```
+
+It appears that the model has less variance when both season and trend are considered multiplicative rather than additive.
+
+
+Using ETS model and broom to fit modeled values against the actual observed values. PLotting the two together and then a histogram of the residuals.
+
+```{r}
+mauna_loa_predicted <- mauna_loa_fit %>% 
+  broom::augment()
+
+# Plotting observed values against fitted values 
+ggplot(mauna_loa_predicted) + 
+  geom_line(aes(x = date, y = co2_mean)) + 
+  geom_line(aes(x = date, y = .fitted), color = "tan", alpha = 0.75)
+
+# Pretty slick. We can see that our fitted values match up quite well with our observed values.
+
+# Plotting residuals histogram
+
+ggplot(mauna_loa_predicted, aes(x = .resid)) + 
+  geom_histogram(bins = 40)
+
+# Normal looking residuals. Pretty chill
+```
+
+Creating ETS Model just trained on data through 2003. Then creating the same forecast to see if it matches up.  
+
+```{r}
+mauna_loa_fit1 <- mauna_loa_ts %>% 
+  filter_index(. ~ "2003-01") %>% 
+  model(ets = ETS(co2_mean ~ season(method = "M") + trend(method = "M")))
+
+mauna_loa_forecast1 <- mauna_loa_fit1 %>% 
+  forecast(h = '20 years')
+
+mauna_loa_ts1 <- mauna_loa_ts %>% 
+  filter_index("2003-01" ~ .)
+
+mauna_loa_forecast1 %>% 
+  autoplot(mauna_loa_ts1)
+
+mauna_loa_predicted1 <- mauna_loa_fit1 %>% 
+  broom::augment() 
+
+ggplot(mauna_loa_predicted1) + 
+  geom_line(aes(x = date, y = co2_mean)) + 
+  geom_line(aes(x = date, y = .fitted), color = "tan", alpha = 0.75)
+```
+
+Comparing the forecasted values to the observed values from 2004 to 2023 - It appears to undershoot the overall trend by a bit but follows the seasonal trend quite well. In addition, closer to 2003 it maintains a pretty tight correlation to our observed values but strays a bit as we get into the more recent years.
+
+
+### Write up:
+
+From these plots we can see that there appears to be a strong seasonal trend as well as a strong overall trend in these data. There doesn't appear to be any cyclicality to it. Seasonally, it appears that each year the co2 concentrations atop Mauna Loa peak, and fall furring the summer months. In addition, the mean co2 concentration each year is increasing in what appears to be an exponential trend upwards.
+
+For our ETS time model, it appears that a multiplicative model makes more sense. The seasonal variations dont appear to be changing in magnitude over time but are operating from different mean levels as time goes on. In addition I think the trend is multiplicative because it's slope is increasing over time due to increasing rates of co2 emissions throughout the anthropocene.  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
